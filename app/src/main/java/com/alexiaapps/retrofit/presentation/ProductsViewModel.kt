@@ -23,6 +23,10 @@ class ProductsViewModel(
     private val _showErrorToastChannel = Channel<Boolean>()
     val showErrorToastChannel = _showErrorToastChannel.receiveAsFlow()
 
+    private var allObjectIDs: List<Int> = emptyList()  // Lista completă de ID-uri
+    private var currentPage = 0  // Indexul paginii curente
+    private val pageSize = 10  // Numărul de obiecte pe pagină
+
     init {
         viewModelScope.launch {
             objectsRepository.getObjectIDsList().collectLatest { result ->
@@ -32,12 +36,24 @@ class ProductsViewModel(
                     }
                     is Result.Success -> {
                         result.data?.let { objectIDs ->
-                            fetchObjectDetails(objectIDs.objectIDs)
+                            allObjectIDs = objectIDs.objectIDs  // Salvăm toate ID-urile
+                            loadNextPage()  // Încărcăm prima pagină
                         }
                     }
                 }
             }
         }
+    }
+
+    fun loadNextPage() {
+        if (currentPage * pageSize >= allObjectIDs.size) return  // Verificăm dacă am terminat
+
+        val startIndex = currentPage * pageSize
+        val endIndex = minOf(startIndex + pageSize, allObjectIDs.size)
+        val nextBatch = allObjectIDs.subList(startIndex, endIndex)
+
+        fetchObjectDetails(nextBatch)
+        currentPage++  // Incrementăm pagina
     }
 
     private fun fetchObjectDetails(ids: List<Int>) {
@@ -49,7 +65,7 @@ class ProductsViewModel(
                     objectResult.data?.let { objectList.add(it) }
                 }
             }
-            _objects.update { objectList }
+            _objects.update { currentList -> currentList + objectList }  // Adăugăm noile obiecte
         }
     }
 }

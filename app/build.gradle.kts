@@ -65,8 +65,5 @@ dependencies {
     implementation(libs.okhttp3.okhttp)
     implementation(libs.logging.interceptor)
 
-
-
-
 }
 

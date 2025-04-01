@@ -10,6 +10,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
@@ -51,8 +53,19 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val objectList = viewModel.objects.collectAsState().value
+                    val objectList by viewModel.objects.collectAsStateWithLifecycle()
                     val context = LocalContext.current
+                    val listState = rememberLazyListState()
+
+                    // Detectăm când utilizatorul ajunge la sfârșitul listei
+                    LaunchedEffect(listState) {
+                        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+                            .collect { lastIndex ->
+                                if (lastIndex != null && lastIndex >= objectList.size - 1) {
+                                    viewModel.loadNextPage()  // Încărcăm următoarea pagină
+                                }
+                            }
+                    }
 
                     LaunchedEffect(viewModel.showErrorToastChannel) {
                         viewModel.showErrorToastChannel.collectLatest { show ->
@@ -71,6 +84,7 @@ class MainActivity : ComponentActivity() {
                         }
                     } else {
                         LazyColumn(
+                            state = listState,  // Legăm LazyColumn de lista de scroll
                             modifier = Modifier.fillMaxSize(),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             contentPadding = PaddingValues(16.dp)
@@ -89,6 +103,11 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun ObjectID(objectData: ObjectID) {
+    // Verificăm dacă există o imagine primară
+    if (objectData.primaryImage.isEmpty()) {
+        return // Ignorăm complet afișarea acestui obiect
+    }
+
     val imageState = rememberAsyncImagePainter(
         model = ImageRequest.Builder(LocalContext.current)
             .data(objectData.primaryImage)
@@ -103,27 +122,41 @@ fun ObjectID(objectData: ObjectID) {
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.primaryContainer)
     ) {
-        if (imageState is AsyncImagePainter.State.Error) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
+        when (imageState) {
+            is AsyncImagePainter.State.Loading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
             }
+            is AsyncImagePainter.State.Error -> {
+                // Puteți afișa un placeholder sau ignora complet obiectul
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Image not available")
+                }
+            }
+            is AsyncImagePainter.State.Success -> {
+                Image(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    painter = imageState.painter,
+                    contentDescription = objectData.objectName,
+                    contentScale = ContentScale.Crop
+                )
+            }
+            else -> Unit
         }
 
-        if (imageState is AsyncImagePainter.State.Success) {
-            Image(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp),
-                painter = imageState.painter,
-                contentDescription = objectData.objectName,
-                contentScale = ContentScale.Crop
-            )
-        }
         Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = "${objectData.objectName} -- Author: ${objectData.artistDisplayName}",
